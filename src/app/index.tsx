@@ -1,367 +1,540 @@
 import { Image } from 'expo-image';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 type Product = {
   id: number;
   title: string;
-  description?: string;
   category?: string;
   price?: number;
   thumbnail?: string;
+  description?: string;
+  brand?: string;
+  rating?: number;
+  stock?: number;
+  discountPercentage?: number;
+  weight?: number;
+  warrantyInformation?: string;
+  shippingInformation?: string;
+  availabilityStatus?: string;
+  returnPolicy?: string;
+  minimumOrderQuantity?: number;
+  sku?: string;
+  tags?: string[];
+  dimensions?: { width?: number; height?: number; depth?: number };
   images?: string[];
   [key: string]: unknown;
 };
 
-type ProductsResponse = {
-  products: Product[];
-};
+const API = 'https://dummyjson.com/products';
 
 export default function HomeScreen() {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('');
-  const [price, setPrice] = useState('');
-  const [showForm, setShowForm] = useState(false);
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
-  const [latestProduct, setLatestProduct] = useState<Product | null>(null);
+  const [title, setTitle] = useState('');
+  const [price, setPrice] = useState('');
+  const [category, setCategory] = useState('');
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [nextId, setNextId] = useState(-1);
+  const [search, setSearch] = useState('');
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
-  const displayedProducts = latestProduct
-    ? [latestProduct, ...products.filter(product => product.id !== latestProduct.id)]
-    : products;
+  useEffect(() => {
+    getProducts();
+  }, []);
+
+  // main http method used by other http protocols
+  async function apiRequest(
+    url: string,
+    method = 'GET',
+    body?: object
+  ) {
+    const response = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  }
 
   async function getProducts() {
-    await loadProducts(
-      'https://dummyjson.com/products?limit=0&select=id,title,description,category,price,stock,tags,brand,thumbnail,images',
-    );
-  }
-
-  async function loadProducts(url: string) {
     setLoading(true);
-    setError(null);
+    setError('');
 
     try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`);
-      }
-
-      const data = (await response.json()) as ProductsResponse;
+      const data = await apiRequest(`${API}?limit=0`);
       setProducts(data.products);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Unable to load products.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load products.');
     } finally {
       setLoading(false);
     }
   }
 
-  async function postProduct() {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch('https://dummyjson.com/products/add', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          title,
-          description,
-          category,
-          price: Number(price),
-          userId: 1,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`);
-      }
-
-      const createdProduct = (await response.json()) as Product;
-      setLatestProduct(createdProduct);
-      setShowForm(false);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Unable to create product.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function startEditing(product: Product) {
-    setEditingProduct(product);
-    setTitle(product.title);
-    setDescription(product.description ?? '');
-    setCategory(product.category ?? '');
-    setPrice(product.price?.toString() ?? '');
-    setShowForm(true);
-    setError(null);
-  }
-
-  function startCreating() {
-    setEditingProduct(null);
-    setTitle('');
-    setDescription('');
-    setCategory('');
-    setPrice('');
-    setShowForm(!showForm);
-    setError(null);
-  }
-
-  async function updateProduct() {
-    if (!editingProduct) {
+  async function searchProducts() {
+    if (!search.trim()) {
+      getProducts();
       return;
     }
 
     setLoading(true);
-    setError(null);
+    setError('');
 
     try {
-      const response = await fetch(`https://dummyjson.com/products/${editingProduct.id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          title,
-          description,
-          category,
-          price: Number(price),
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`);
-      }
-
-      const updatedProduct = (await response.json()) as Product;
-      setProducts(currentProducts =>
-        currentProducts.map(product =>
-          product.id === updatedProduct.id ? { ...product, ...updatedProduct } : product,
-        ),
+      const data = await apiRequest(
+        `${API}/search?q=${encodeURIComponent(search.trim())}`
       );
-      setLatestProduct(current =>
-        current?.id === updatedProduct.id ? { ...current, ...updatedProduct } : current,
-      );
-      setEditingProduct(null);
-      setShowForm(false);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Unable to update product.');
+      setProducts(data.products);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to search products.');
     } finally {
       setLoading(false);
     }
   }
 
-  async function deleteProduct(product: Product) {
+  async function getSingleProduct(id: number) {
     setLoading(true);
-    setError(null);
+    setError('');
 
     try {
-      const response = await fetch(`https://dummyjson.com/products/${product.id}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`);
-      }
-
-      await response.json();
-      setProducts(currentProducts => currentProducts.filter(item => item.id !== product.id));
-      setLatestProduct(current => (current?.id === product.id ? null : current));
-      if (editingProduct?.id === product.id) {
-        setEditingProduct(null);
-        setShowForm(false);
-      }
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Unable to delete product.');
+      const product = await apiRequest(`${API}/${id}`);
+      setSelectedProduct(product);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to get product.');
     } finally {
       setLoading(false);
     }
   }
 
-  function formatValue(value: unknown) {
-    if (typeof value === 'string') {
-      return value;
+  function openCreateForm() {
+    setEditingId(null);
+    setTitle('');
+    setPrice('');
+    setCategory('');
+    setError('');
+    setShowForm(true);
+  }
+
+  function openEditForm(product: Product) {
+    setEditingId(product.id);
+    setTitle(product.title);
+    setPrice(String(product.price ?? ''));
+    setCategory(product.category ?? '');
+    setError('');
+    setShowForm(true);
+  }
+
+  function closeForm() {
+    setShowForm(false);
+    setEditingId(null);
+    setTitle('');
+    setPrice('');
+    setCategory('');
+  }
+  
+
+ // The Post and Patch are both under this function
+  async function saveProduct() {
+    if (!title.trim() || !price.trim()) {
+      setError('Enter a product name and price.');
+      return;
     }
-    if (value === null || value === undefined) {
-      return String(value);
+
+    const numericPrice = Number(price);
+
+    if (!Number.isFinite(numericPrice) || numericPrice < 0) {
+      setError('Enter a valid price.');
+      return;
     }
-    return typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
+
+    const body = {
+      title: title.trim(),
+      category: category.trim(),
+      price: numericPrice,
+    };
+
+    setLoading(true);
+    setError('');
+
+    try {
+      if (editingId !== null) {
+        // Update the local product, including products created in this app.
+        setProducts(current =>
+          current.map(product =>
+            product.id === editingId
+              ? { ...product, ...body }
+              : product
+          )
+        );
+
+        // DummyJSON simulates PATCH; its database is not changed.
+        try {
+          await apiRequest(`${API}/${editingId}`, 'PATCH', body);
+        } catch {
+          // Keep the local edit even if the API does not recognize the ID.
+        }
+      } else {
+        // Create locally with a unique ID for reliable editing and deletion.
+        const localProduct: Product = {
+          id: nextId,
+          ...body,
+          thumbnail: '',
+        };
+
+        setNextId(current => current - 1);
+        setProducts(current => [localProduct, ...current]);
+
+        // Send POST to demonstrate API creation.
+        try {
+          await apiRequest(`${API}/add`, 'POST', {
+            ...body,
+            userId: 1,
+          });
+        } catch {
+          // The local product remains available.
+        }
+      }
+
+      closeForm();
+    } catch {
+      setError('Could not save the product.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deleteProduct(id: number) {
+    // Delete from the UI immediately.
+    setProducts(current =>
+      current.filter(product => product.id !== id)
+    );
+
+    if (editingId === id) {
+      closeForm();
+    }
+
+    // Send DELETE to demonstrate the API request.
+    try {
+      await apiRequest(`${API}/${id}`, 'DELETE');
+    } catch {
+      // Local deletion remains effective even for locally created products.
+    }
+  }
+
+  if (selectedProduct) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.detailHeader}>
+          <Text style={styles.detailEyebrow}>PRODUCT DETAILS</Text>
+          <Text style={styles.detailTitle}>{selectedProduct.title}</Text>
+          <Text style={styles.detailCategory}>
+            {selectedProduct.category || 'Uncategorized'}
+          </Text>
+        </View>
+
+        <FlatList
+          data={[selectedProduct]}
+          keyExtractor={item => String(item.id)}
+          contentContainerStyle={styles.detailList}
+          renderItem={({ item }) => (
+            <View>
+              {item.thumbnail ? (
+                <Image
+                  source={{ uri: item.thumbnail }}
+                  style={styles.detailImage}
+                  contentFit="contain"
+                />
+              ) : (
+                <View style={styles.detailImagePlaceholder}>
+                  <Text style={styles.blackText}>No image available</Text>
+                </View>
+              )}
+
+              <View style={styles.detailPriceRow}>
+                <Text style={styles.detailPrice}>
+                  ${Number(item.price ?? 0).toFixed(2)}
+                </Text>
+                {typeof item.discountPercentage === 'number' && (
+                  <Text style={styles.detailDiscount}>
+                    {item.discountPercentage.toFixed(1)}% OFF
+                  </Text>
+                )}
+              </View>
+
+              <Text style={styles.detailDescription}>
+                {item.description || 'No description available.'}
+              </Text>
+
+              <Text style={styles.detailSectionTitle}>PRODUCT INFORMATION</Text>
+              <View style={styles.detailGrid}>
+                <View style={styles.detailInfoCard}>
+                  <Text style={styles.detailLabel}>Brand</Text>
+                  <Text style={styles.detailValue}>{item.brand || 'N/A'}</Text>
+                </View>
+                <View style={styles.detailInfoCard}>
+                  <Text style={styles.detailLabel}>Rating</Text>
+                  <Text style={styles.detailValue}>
+                    {typeof item.rating === 'number' ? `★ ${item.rating}` : 'N/A'}
+                  </Text>
+                </View>
+                <View style={styles.detailInfoCard}>
+                  <Text style={styles.detailLabel}>Stock</Text>
+                  <Text style={styles.detailValue}>
+                    {typeof item.stock === 'number' ? item.stock : 'N/A'}
+                  </Text>
+                </View>
+                <View style={styles.detailInfoCard}>
+                  <Text style={styles.detailLabel}>Availability</Text>
+                  <Text style={styles.detailValue}>
+                    {item.availabilityStatus || 'N/A'}
+                  </Text>
+                </View>
+                <View style={styles.detailInfoCard}>
+                  <Text style={styles.detailLabel}>Weight</Text>
+                  <Text style={styles.detailValue}>
+                    {typeof item.weight === 'number' ? `${item.weight} g` : 'N/A'}
+                  </Text>
+                </View>
+                <View style={styles.detailInfoCard}>
+                  <Text style={styles.detailLabel}>Minimum Order</Text>
+                  <Text style={styles.detailValue}>
+                    {typeof item.minimumOrderQuantity === 'number'
+                      ? item.minimumOrderQuantity
+                      : 'N/A'}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={styles.detailSectionTitle}>SHIPPING & RETURNS</Text>
+              <View style={styles.detailInfoCard}>
+                <Text style={styles.detailLabel}>Shipping</Text>
+                <Text style={styles.detailValue}>
+                  {item.shippingInformation || 'N/A'}
+                </Text>
+                <Text style={styles.detailLabel}>Warranty</Text>
+                <Text style={styles.detailValue}>
+                  {item.warrantyInformation || 'N/A'}
+                </Text>
+                <Text style={styles.detailLabel}>Return Policy</Text>
+                <Text style={styles.detailValue}>
+                  {item.returnPolicy || 'N/A'}
+                </Text>
+              </View>
+
+              {item.dimensions && (
+                <>
+                  <Text style={styles.detailSectionTitle}>DIMENSIONS</Text>
+                  <View style={styles.detailInfoCard}>
+                    <Text style={styles.detailValue}>
+                      Width: {item.dimensions.width ?? 'N/A'} · Height: {item.dimensions.height ?? 'N/A'} · Depth: {item.dimensions.depth ?? 'N/A'}
+                    </Text>
+                  </View>
+                </>
+              )}
+
+              {item.tags && item.tags.length > 0 && (
+                <>
+                  <Text style={styles.detailSectionTitle}>TAGS</Text>
+                  <View style={styles.detailTags}>
+                    {item.tags.map(tag => (
+                      <View key={tag} style={styles.detailTag}>
+                        <Text style={styles.detailTagText}>{tag}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              <Text style={styles.detailSku}>SKU: {item.sku || 'N/A'}</Text>
+            </View>
+          )}
+        />
+
+        {/* CHANGED: floating black back button, always visible at the bottom */}
+        <Pressable
+          style={styles.floatingBack}
+          onPress={() => setSelectedProduct(null)}
+        >
+          <Text style={styles.whiteText}>← BACK TO PRODUCTS</Text>
+        </Pressable>
+      </SafeAreaView>
+    );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <FlatList
-          data={displayedProducts}
-          keyExtractor={product => String(product.id)}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={styles.listContent}
-          ItemSeparatorComponent={() => <View style={styles.itemSeparator} />}
+          data={products}
+          keyExtractor={item => String(item.id)}
+          contentContainerStyle={styles.list}
+          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
           ListHeaderComponent={
             <View>
-              <View style={styles.buttonRow}>
-                <TouchableOpacity
-                  style={[styles.actionButton, loading && styles.disabledButton]}
-                  onPress={getProducts}
-                  disabled={loading}
-                >
-                  <Text style={styles.buttonText}>Get All Products (Hide Meta)</Text>
-                </TouchableOpacity>
-              </View>
+              <Text style={styles.heading}>PRODUCT STORE</Text>
+              <Text style={styles.subtitle}>Product management</Text>
 
               <TouchableOpacity
-                style={styles.toggleButton}
-                onPress={() => {
-                  if (showForm) {
-                    setShowForm(false);
-                    setEditingProduct(null);
-                    setError(null);
-                  } else {
-                    startCreating();
-                  }
-                }}
+                style={styles.blackButton}
+                onPress={getProducts}
+                disabled={loading}
               >
-                <Text style={styles.toggleButtonText}>
-                  {showForm ? (editingProduct ? 'Cancel Update' : 'Hide Form') : 'Post Product'}
+                <Text style={styles.whiteText}>GET ALL PRODUCTS</Text>
+              </TouchableOpacity>
+
+              <TextInput
+                style={styles.input}
+                placeholder="Search products..."
+                placeholderTextColor="#666"
+                value={search}
+                onChangeText={setSearch}
+                onSubmitEditing={searchProducts}
+                returnKeyType="search"
+              />
+
+              <TouchableOpacity
+                style={styles.blackButton}
+                onPress={searchProducts}
+                disabled={loading}
+              >
+                <Text style={styles.whiteText}>SEARCH PRODUCTS</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.whiteButton}
+                onPress={() => showForm ? closeForm() : openCreateForm()}
+              >
+                <Text style={styles.blackText}>
+                  {showForm ? 'CANCEL' : '+ ADD PRODUCT'}
                 </Text>
               </TouchableOpacity>
 
               {showForm && (
-                <View style={styles.formCard}>
+                <View style={styles.form}>
                   <Text style={styles.formTitle}>
-                    {editingProduct ? `Update Product #${editingProduct.id}` : 'New Product'}
+                    {editingId !== null ? 'EDIT PRODUCT' : 'NEW PRODUCT'}
                   </Text>
-                  <Text style={styles.fieldLabel}>Title</Text>
+
                   <TextInput
                     style={styles.input}
+                    placeholder="Product name"
+                    placeholderTextColor="#666"
                     value={title}
                     onChangeText={setTitle}
-                    placeholder="Enter title"
                   />
 
-                  <Text style={styles.fieldLabel}>Description</Text>
-                  <TextInput
-                    style={[styles.input, styles.multilineInput]}
-                    value={description}
-                    onChangeText={setDescription}
-                    placeholder="Enter description"
-                    multiline
-                  />
-
-                  <Text style={styles.fieldLabel}>Category</Text>
                   <TextInput
                     style={styles.input}
+                    placeholder="Category"
+                    placeholderTextColor="#666"
                     value={category}
                     onChangeText={setCategory}
-                    placeholder="Enter category"
                   />
 
-                  <Text style={styles.fieldLabel}>Price</Text>
                   <TextInput
                     style={styles.input}
+                    placeholder="Price"
+                    placeholderTextColor="#666"
                     value={price}
-                    onChangeText={text => setPrice(text.replace(/[^0-9.]/g, ''))}
-                    keyboardType="numeric"
-                    placeholder="0.00"
+                    onChangeText={setPrice}
+                    keyboardType="decimal-pad"
                   />
 
                   <TouchableOpacity
-                    style={[styles.submitButton, loading && styles.disabledButton]}
-                    onPress={editingProduct ? updateProduct : postProduct}
+                    style={styles.blackButton}
+                    onPress={saveProduct}
                     disabled={loading}
                   >
-                    <Text style={styles.submitButtonText}>
-                      {loading
-                        ? editingProduct
-                          ? 'Updating...'
-                          : 'Submitting...'
-                        : editingProduct
-                          ? 'Update Product'
-                          : 'Submit Product'}
+                    <Text style={styles.whiteText}>
+                      {editingId !== null ? 'SAVE CHANGES' : 'CREATE PRODUCT'}
                     </Text>
                   </TouchableOpacity>
                 </View>
               )}
 
-              {loading && <Text style={styles.statusText}>Loading...</Text>}
-              {error && <Text style={styles.errorText}>{error}</Text>}
+              {loading && <ActivityIndicator color="#000" />}
 
-              <Text style={styles.listTitle}>
-                Products ({displayedProducts.length})
+              {!!error && <Text style={styles.error}>{error}</Text>}
+
+              <Text style={styles.sectionTitle}>
+                PRODUCTS ({products.length})
               </Text>
             </View>
           }
           ListEmptyComponent={
-            <Text style={styles.statusText}>Tap a GET button to load products.</Text>
+            !loading ? (
+              <Text style={styles.empty}>No products found.</Text>
+            ) : null
           }
-          renderItem={({ item }) => {
-            const imageUrls = [...new Set([item.thumbnail, ...(item.images ?? [])])]
-              .filter((url): url is string => typeof url === 'string' && url.length > 0);
-
-            return (
-              <View style={styles.productCard}>
-                {latestProduct?.id === item.id && (
-                  <Text style={styles.latestLabel}>Latest post</Text>
-                )}
-                {imageUrls.length > 0 && (
-                  <View style={styles.imageList}>
-                    {imageUrls.map((url, index) => (
-                      <Image
-                        key={`${item.id}-${url}`}
-                        source={{ uri: url }}
-                        contentFit="cover"
-                        accessibilityLabel={`${item.title} image ${index + 1}`}
-                        style={styles.productImage}
-                      />
-                    ))}
-                  </View>
-                )}
-                {Object.entries(item)
-                  .filter(([key]) => key !== 'meta' && key !== 'thumbnail' && key !== 'images')
-                  .map(([key, value]) => (
-                    <View key={key} style={styles.dataField}>
-                      <Text style={styles.dataLabel}>{key}</Text>
-                      <Text selectable style={styles.dataValue}>
-                        {formatValue(value)}
-                      </Text>
-                    </View>
-                  ))}
-                <View style={styles.productActions}>
-                  <TouchableOpacity
-                    style={[styles.editButton, loading && styles.disabledButton]}
-                    onPress={() => startEditing(item)}
-                    disabled={loading}
-                  >
-                    <Text style={styles.actionText}>Edit</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.deleteButton, loading && styles.disabledButton]}
-                    onPress={() => deleteProduct(item)}
-                    disabled={loading}
-                  >
-                    <Text style={styles.deleteButtonText}>Delete</Text>
-                  </TouchableOpacity>
+          renderItem={({ item }) => (
+            <View style={styles.card}>
+              {item.thumbnail ? (
+                <Image
+                  source={{ uri: item.thumbnail }}
+                  style={styles.productImage}
+                  contentFit="contain"
+                />
+              ) : (
+                <View style={styles.imagePlaceholder}>
+                  <Text style={styles.blackText}>No image</Text>
                 </View>
+              )}
+
+              <Text style={styles.productName}>{item.title}</Text>
+              <Text style={styles.category}>
+                Category: {item.category || 'N/A'}
+              </Text>
+              <Text style={styles.price}>
+                ${Number(item.price ?? 0).toFixed(2)}
+              </Text>
+
+              <View style={styles.actions}>
+                <TouchableOpacity
+                  style={styles.editButton}
+                  onPress={() => openEditForm(item)}
+                >
+                  <Text style={styles.blackText}>EDIT</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.editButton}
+                  onPress={() => getSingleProduct(item.id)}
+                  disabled={loading}
+                >
+                  <Text style={styles.blackText}>VIEW</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.deleteButton}
+                  onPress={() => deleteProduct(item.id)}
+                >
+                  <Text style={styles.whiteText}>DELETE</Text>
+                </TouchableOpacity>
               </View>
-            );
-          }}
+            </View>
+          )}
         />
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -369,204 +542,197 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  listContent: {
-    padding: 20,
-    flexGrow: 1,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-    marginBottom: 16,
-  },
-  actionButton: {
-    flex: 1,
-    backgroundColor: 'powderblue',
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+  container: { flex: 1, backgroundColor: '#fff' },
+  list: { padding: 16 },
+  heading: { fontSize: 27, fontWeight: '900', color: '#000' },
+  subtitle: { color: '#333', marginTop: 5, marginBottom: 20 },
+  blackButton: {
+    backgroundColor: '#000',
+    padding: 14,
     alignItems: 'center',
-  },
-  disabledButton: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#0f172a',
-    fontWeight: '600',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  toggleButton: {
-    backgroundColor: '#0284c7',
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  toggleButtonText: {
-    color: '#ffffff',
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  formCard: {
-    backgroundColor: '#ffffff',
-    padding: 20,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-    marginBottom: 20,
-  },
-  formTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  fieldLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#334155',
-    marginBottom: 6,
-    marginTop: 12,
-  },
-  input: {
-    backgroundColor: '#f1f5f9',
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-    color: '#0f172a',
-  },
-  multilineInput: {
-    height: 80,
-    textAlignVertical: 'top',
-  },
-  submitButton: {
-    backgroundColor: '#16a34a',
-    paddingVertical: 12,
-    borderRadius: 6,
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  submitButtonText: {
-    color: '#ffffff',
-    fontWeight: '600',
-    fontSize: 15,
-  },
-  statusText: {
-    color: '#64748b',
-    textAlign: 'center',
-    paddingVertical: 16,
-  },
-  errorText: {
-    color: '#b91c1c',
-    paddingVertical: 12,
-  },
-  listTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#0f172a',
-    marginBottom: 12,
-  },
-  itemSeparator: {
-    height: 12,
-  },
-  productCard: {
-    backgroundColor: '#ffffff',
-    padding: 16,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  imageList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
-  },
-  productImage: {
-    width: 96,
-    height: 96,
-    borderRadius: 8,
-    backgroundColor: '#e2e8f0',
-  },
-  dataField: {
     marginBottom: 10,
   },
-  dataLabel: {
-    color: '#334155',
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'capitalize',
-    marginBottom: 3,
+  whiteButton: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#000',
+    padding: 13,
+    alignItems: 'center',
+    marginBottom: 18,
   },
-  dataValue: {
-    color: '#475569',
-    fontSize: 13,
-    lineHeight: 18,
+  whiteText: { color: '#fff', fontWeight: 'bold' },
+  blackText: { color: '#000', fontWeight: 'bold' },
+  form: { borderWidth: 1, borderColor: '#000', padding: 14, marginBottom: 20 },
+  formTitle: { fontSize: 18, fontWeight: '900', color: '#000', marginBottom: 12 },
+  input: {
+    borderWidth: 1,
+    borderColor: '#000',
+    padding: 11,
+    color: '#000',
+    marginBottom: 10,
   },
-  productActions: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 8,
+  error: { color: '#000', padding: 10, marginBottom: 12 },
+  sectionTitle: { fontSize: 20, fontWeight: '900', color: '#000', marginBottom: 12 },
+  empty: { color: '#000', textAlign: 'center', padding: 20 },
+  card: { borderWidth: 1, borderColor: '#000', padding: 12 },
+  productImage: { width: '100%', height: 180, marginBottom: 12 },
+  imagePlaceholder: {
+    height: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    backgroundColor: '#eee',
   },
+  productName: { fontSize: 18, fontWeight: '900', color: '#000', marginBottom: 6 },
+  category: { fontSize: 14, color: '#000', marginBottom: 6 },
+  price: { fontSize: 17, fontWeight: 'bold', color: '#000', marginBottom: 12 },
+  actions: { flexDirection: 'row', gap: 10, marginTop: 4 },
   editButton: {
     flex: 1,
+    borderWidth: 1,
+    borderColor: '#000',
+    padding: 12,
     alignItems: 'center',
-    paddingVertical: 10,
-    borderRadius: 6,
-    backgroundColor: '#dbeafe',
   },
   deleteButton: {
     flex: 1,
+    backgroundColor: '#000',
+    padding: 12,
     alignItems: 'center',
-    paddingVertical: 10,
-    borderRadius: 6,
-    backgroundColor: '#fee2e2',
   },
-  actionText: {
-    color: '#1d4ed8',
-    fontWeight: '700',
+  // CHANGED: position + zIndex so nothing below can paint over the back button
+  detailHeader: {
+    backgroundColor: '#000',
+    padding: 20,
+    position: 'relative',
+    zIndex: 10,
   },
-  deleteButtonText: {
-    color: '#b91c1c',
-    fontWeight: '700',
+  // CHANGED: floating black back button pinned to the bottom of the detail screen
+  floatingBack: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 16,
+    zIndex: 9999,
+    elevation: 10,
+    backgroundColor: '#000',
+    borderWidth: 1,
+    borderColor: '#000',
+    paddingVertical: 16,
+    alignItems: 'center',
+    cursor: 'pointer',
   },
-  latestLabel: {
-    color: '#15803d',
+  detailEyebrow: {
+    color: '#bbb',
     fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    marginBottom: 6,
-  },
-  productTitle: {
-    color: '#0f172a',
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
-  productDescription: {
-    color: '#475569',
-    fontSize: 14,
-    lineHeight: 20,
+    fontWeight: 'bold',
+    letterSpacing: 2,
     marginBottom: 8,
   },
-  productDetail: {
-    color: '#334155',
-    fontSize: 13,
-    marginTop: 3,
+  detailTitle: {
+    color: '#fff',
+    fontSize: 26,
+    fontWeight: '900',
+  },
+  detailCategory: {
+    color: '#ddd',
+    marginTop: 6,
+    textTransform: 'capitalize',
+  },
+  detailList: {
+    padding: 16,
+    paddingBottom: 100,
+  },
+  detailImage: {
+    width: '100%',
+    height: 240,
+    backgroundColor: '#f5f5f5',
+    marginBottom: 18,
+  },
+  detailImagePlaceholder: {
+    height: 180,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eee',
+    marginBottom: 18,
+  },
+  detailPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 12,
+  },
+  detailPrice: {
+    fontSize: 25,
+    fontWeight: '900',
+    color: '#000',
+  },
+  detailDiscount: {
+    color: '#fff',
+    backgroundColor: '#000',
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    fontWeight: 'bold',
+    overflow: 'hidden',
+  },
+  detailDescription: {
+    fontSize: 15,
+    color: '#333',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  detailSectionTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#000',
+    marginBottom: 10,
+    marginTop: 8,
+    letterSpacing: 1,
+  },
+  detailGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 20,
+  },
+  detailInfoCard: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    padding: 12,
+    marginBottom: 10,
+    backgroundColor: '#fafafa',
+  },
+  detailLabel: {
+    color: '#666',
+    fontSize: 12,
+    marginBottom: 4,
+    marginTop: 6,
+  },
+  detailValue: {
+    color: '#000',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  detailTags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 18,
+  },
+  detailTag: {
+    borderWidth: 1,
+    borderColor: '#bbb',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  detailTagText: {
+    color: '#333',
+    fontSize: 12,
+  },
+  detailSku: {
+    color: '#777',
+    fontSize: 12,
+    marginTop: 12,
   },
 });
